@@ -2,9 +2,14 @@
 import numpy as np
 import pandas as pd
 
-xy_data = np.array(pd.read_csv('Ux.txt', delimiter = "\t"))[:,1:4]
+xyz_data = np.array(pd.read_csv('Ux.txt', delimiter = "\t"))[:,1:4]
+
+# Reading displacements and combining into one array
 ux = np.array(pd.read_csv('Ux.txt', delimiter = "\t"))[:,4]
 uy = np.array(pd.read_csv('Uy.txt', delimiter = "\t"))[:,4]
+uz = np.zeros((uy.shape[0],1))
+displacement = np.concatenate((ux[:,np.newaxis], uy[:,np.newaxis], uz), axis=1)
+
 sxx = np.array( pd.read_csv('Sxx.txt', delimiter = "\t"))[:,4]
 syy = np.array( pd.read_csv('Syy.txt', delimiter = "\t"))[:,4]
 sxy = np.array( pd.read_csv('Sxy.txt', delimiter = "\t"))[:,4]
@@ -39,3 +44,5 @@ bc_present[index] = 1
 
 # Concatenate the old array and the new column to create the new array
 #new_array = np.hstack([bc_data, bc_present])
+
+print(bc_present.shape, boundary_conditions.shape, xyz_data.shape, displacement.shape)
