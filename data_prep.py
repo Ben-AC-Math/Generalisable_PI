@@ -19,9 +19,9 @@ bc_data = np.array(pd.read_csv('Ux.txt', delimiter = "\t"))
 bc_data = np.concatenate((bc_data, uy[:,np.newaxis]), axis=1)
 
 #filter BC based on if Y coord is 10 
-bc_data_top = bc_data[bc_data[:,2] == 10]
-bc_data_bottom = bc_data[bc_data[:,2] == 0]
-bc_data = np.concatenate((bc_data_top, bc_data_bottom), axis=0)
+#bc_data_top = bc_data[bc_data[:,2] == 10]
+#bc_data_bottom = bc_data[bc_data[:,2] == 0]
+#bc_data = np.concatenate((bc_data_top, bc_data_bottom), axis=0)
 
 
 # Create a boolean index that is True for rows where the value in the 3rd column is 10 
@@ -43,6 +43,8 @@ bc_present = np.zeros((bc_data.shape[0], 1))
 bc_present[index] = 1
 
 # Concatenate the old array and the new column to create the new array
-#new_array = np.hstack([bc_data, bc_present])
+boundary_conditions = np.concatenate((bc_present, boundary_conditions), axis=1)
 
-print(bc_present.shape, boundary_conditions.shape, xyz_data.shape, displacement.shape)
+print(boundary_conditions.shape, xyz_data.shape, displacement.shape)
+
+#print(bc_present)
