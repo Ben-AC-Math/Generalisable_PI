@@ -8,26 +8,36 @@ Created on Wed Jan  4 12:13:57 2023
 import tensorflow as tf
 
 # Define the inputs to the neural network
-points = tf.placeholder(tf.float32, shape=(None, 3))  # 3D coordinates of the points
-displacement = tf.placeholder(tf.float32, shape=(None, 3))  # Displacement at each point
-boundary_conditions = tf.placeholder(tf.float32, shape=(None, num_boundary_conditions))  # Boundary conditions at each point
+points = tf.placeholder(tf.float32, shape=(None, num_points, 3))  # 3D coordinates of the points
+boundary_conditions = tf.placeholder(tf.float32, shape=(None, num_points, num_boundary_conditions))  # Boundary conditions at each point
 
 # Concatenate the inputs
 inputs = tf.concat([points, boundary_conditions], axis=-1)
 
-# Define the neural network architecture
-num_hidden_layers = 2
+# Define the convolutional and pooling layers
+num_filters = 64
+kernel_size = 1
+stride = 1
+padding = "VALID"
+pooling_size = num_points
+
+layer = inputs
+for i in range(num_hidden_layers):
+    layer = tf.layers.conv1d(layer, num_filters, kernel_size, stride, padding)
+    layer = tf.layers.max_pooling1d(layer, pool_size=pooling_size, strides=pooling_size)
+global_feature = layer
+
+# Define the fully connected layers
 num_neurons_per_layer = 32
 activation_function = tf.nn.relu
 
-# Add max pooling to the neural network
-pool_size = 2  # Pooling window size
-stride = 2  # Stride of the pooling window
-layer = inputs  # <-- The input layer now includes both the points and the boundary conditions
+layer = global_feature
 for i in range(num_hidden_layers):
     layer = tf.layers.dense(layer, num_neurons_per_layer, activation=activation_function)
-    layer = tf.layers.max_pooling1d(layer, pool_size, stride, padding='same')  # <-- Add max pooling
-output = tf.layers.dense(layer, 3)  # <-- The output is still the displacement field
+output = tf.layers.dense(layer, 3)  # <-- The output is the displacement field
+
+# Define the outputs of the neural network
+displacement = output  # <-- The displacement field is the output of the neural network
 
 # Define the loss function
 displacement_loss = tf.losses.mean_squared_error(displacement, output)
