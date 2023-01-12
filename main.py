@@ -9,6 +9,9 @@ Created on Wed Jan  4 12:13:57 2023
 import tensorflow as tf
 import numpy as np
 import pandas as pd
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.model_selection import train_test_split
+
 
 # Load data from files
 xyz_data = np.array(pd.read_csv('Ux.txt', delimiter = "\t"))[:,1:4]
@@ -44,6 +47,15 @@ bc_present[index] = 1
 
 ## Concatenate the old array and the new column to create the new array
 boundary_conditions = np.concatenate((bc_present, boundary_conditions), axis=1)
+
+# Train Test Split
+train_points, test_points, train_boundary_conditions, test_boundary_conditions = train_test_split(points, boundary_conditions, test_size=0.2)
+train_points, val_points, train_boundary_conditions, val_boundary_conditions = train_test_split(train_points, train_boundary_conditions, test_size=0.2)
+
+# Normalize the data
+scaler = MinMaxScaler()
+points = scaler.fit_transform(train_points)
+boundary_conditions = scaler.fit_transform(train_boundary_conditions)
 
 # Define the inputs to the neural network
 points = tf.compat.v1.placeholder(tf.float32, shape=(None, num_points, 3))  # 3D coordinates of the points
