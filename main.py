@@ -19,10 +19,10 @@ ux = np.array(pd.read_csv('Ux.txt', delimiter = "\t"))[:,4]
 uy = np.array(pd.read_csv('Uy.txt', delimiter = "\t"))[:,4]
 uz = np.zeros((uy.shape[0],1))
 displacement = np.concatenate((ux[:,np.newaxis], uy[:,np.newaxis], uz), axis=1)
-sxx = np.array( pd.read_csv('Sxx.txt', delimiter = "\t"))[:,4]
-syy = np.array( pd.read_csv('Syy.txt', delimiter = "\t"))[:,4]
-sxy = np.array( pd.read_csv('Sxy.txt', delimiter = "\t"))[:,4]
-col_data = np.array(pd.read_csv('Collocation Points.txt', delimiter = "\t"))[:,1:3]
+#sxx = np.array( pd.read_csv('Sxx.txt', delimiter = "\t"))[:,4]
+#syy = np.array( pd.read_csv('Syy.txt', delimiter = "\t"))[:,4]
+#sxy = np.array( pd.read_csv('Sxy.txt', delimiter = "\t"))[:,4]
+#col_data = np.array(pd.read_csv('Collocation Points.txt', delimiter = "\t"))[:,1:3]
 
 bc_data = np.array(pd.read_csv('Ux.txt', delimiter = "\t"))
 bc_data = np.concatenate((bc_data, uy[:,np.newaxis]), axis=1)
