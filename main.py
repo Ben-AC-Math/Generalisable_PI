@@ -17,7 +17,7 @@ mu = 0.5
 lmda = 1000
 
 # Load data from files
-points = np.array(pd.read_csv('Ux.txt', delimiter = "\t"))[:,1:4]
+input_feature = np.array(pd.read_csv('Ux.txt', delimiter = "\t"))[:,1:4]
 ux = np.array(pd.read_csv('Ux.txt', delimiter = "\t"))[:,4]
 uy = np.array(pd.read_csv('Uy.txt', delimiter = "\t"))[:,4]
 uz = np.zeros((uy.shape[0],1))
@@ -46,25 +46,30 @@ bc_present[index] = 1
 ## Concatenate the old array and the new column to create the new array
 boundary_conditions = np.concatenate((bc_present, boundary_conditions), axis=1)
 
+# Creating the input feature vector
+input_feature = np.concatenate((input_feature, boundary_conditions), axis=1)
+
 # Normalize the data
 scaler = MinMaxScaler()
-points = scaler.fit_transform(points)
-boundary_conditions = scaler.fit_transform(boundary_conditions)
+input_feature = scaler.fit_transform(input_feature)
+displacement = scale.fit_transform(displacement)
 
 # Train Test Split
-train_points, test_points, train_boundary_conditions, test_boundary_conditions = train_test_split(points, boundary_conditions, test_size=0.2)
-train_points, val_points, train_boundary_conditions, val_boundary_conditions = train_test_split(train_points, train_boundary_conditions, test_size=0.2)
+train_input_feature, test_input_feature, train_displacement, test_displacement = train_test_split(input_feature, displacement, test_size=0.2)
+train_input_feature, val_input_feature, train_displacement, val_displacement = train_test_split(train_input_feature, train_boundary_conditions, test_size=0.2)
+
+# Finding number of input_feature and bcs for the network
+num_input_feature = train_input_feature.shape[0]
 
 # Define the inputs to the neural network
-points = tf.compat.v1.placeholder(tf.float32, shape=(None, num_points, 3))  # 3D coordinates of the points
-boundary_conditions = tf.compat.v1.placeholder(tf.float32, shape=(None, num_points, num_boundary_conditions))  # Boundary conditions at each point
+input_feature = tf.compat.v1.placeholder(tf.float32, shape=(None, num_input_feature, 3))  # 3D coordinates of the input_feature
 
 # Concatenate the inputs
-inputs = tf.concat([points, boundary_conditions], axis=-1)
+inputs = tf.concat([input_feature], axis=-1)
 
 # Define the shared MLP and the convolutional layers for feature extraction
 model = tf.keras.Sequential()
-model.add(tf.keras.layers.Conv1D(64, kernel_size=1, activation='relu', input_shape=(num_points, 3+num_boundary_conditions)))
+model.add(tf.keras.layers.Conv1D(64, kernel_size=1, activation='relu', input_shape=(num_input_feature)))
 model.add(tf.keras.layers.Conv1D(64, kernel_size=1, activation='relu'))
 model.add(tf.keras.layers.Conv1D(64, kernel_size=1, activation='relu'))
 
@@ -77,36 +82,40 @@ model.add(tf.keras.layers.Dense(256, activation='relu'))
 model.add(tf.keras.layers.Dense(3, activation='linear'))
 
 # Define the displacement field
-displacement = model(inputs)
+displacement_predicted = model(inputs)
 
-# Define the strain tensor
-strain = tf.compat.v1.gradients(displacement, train_points)[0]
+# Split the input_feature tensor into two tensors, one for the point coordinates and one for the boundary conditions
+train_points, train_boundary_conditions = tf.split(train_input_feature, [3, 2], axis=-1)
 
-# Define the stress tensor
-mu = tf.compat.v1.placeholder(tf.float32, shape=())  # Lame's first parameter
-lmbda = tf.compat.v1.placeholder(tf.float32, shape=())  # Lame's second parameter
+# Compute the gradients with respect to the points tensor
+strain = tf.gradients(displacement_predicted, train_points)[0]
 
-# Define the trace of the strain tensor
-trace_strain = tf.reduce_sum(strain, axis=-1, keepdims=True)
+# Define the material parameters
+mu = tf.compat.v1.placeholder(tf.float32, shape=()) # Lame's first parameter
+lmbda = tf.compat.v1.placeholder(tf.float32, shape=()) # Lame's second parameter
 
-# Define the stress tensor
-stress = 2*mu*strain + lmbda*trace_strain*tf.eye(3)
+# Define the right Cauchy-Green deformation tensor
+C = tf.matmul(tf.transpose(strain, [0,2,1]), strain)
+
+# Define the first invariant of C
+I1 = tf.trace(C)
+
+# Define the Jacobian
+J = tf.linalg.det(tf.eye(3) + strain)
+
+# Define the ground substance and volumetric forms of the second Piola-Kirchoff stress tensor
+S_gs = (mu/J)*(tf.eye(3) - (I1/3)*tf.linalg.inv(C))
+S_vol = (lmbda/J)*(tf.log(J))*tf.eye(3)
+S = S_gs + S_vol
+
+# Define the residual forces
+force = tf.compat.v1.gradients(S, train_points)[0]
 
 # Define the loss function
-loss = tf.reduce_mean(tf.square(stress))
+loss = tf.reduce_mean(tf.square(force)) + tf.reduce_mean(tf.square(displacement_predicted - train_displacement))
 
-# Define the optimizer
-optimizer = tf.train.AdamOptimizer()
+model.compile(loss = loss, optimizer = 'Adam', metrics = ['accuracy'])
 
-# Define the training operation
-train_op = optimizer.minimize(neo_hookean_loss)
+model.fit(train_input_feature, train_displacement, epochs=100, batch_size=32, validation_data = (val_input_feature, val_displacement))
 
-# Train the model
-with tf.Session() as sess:
-    sess.run(tf.global_variables_initializer())
-    for step in range(num_steps):
-        _, loss_value = sess.run([train_op, neo_hookean_loss], feed_dict={points: xyz_data, boundary_conditions: boundary_conditions, displacement: displacement})
-        if step % 100 == 0:
-            print("Step: {}, Loss: {}".format(step, loss_value))
 
-#Complie model and train and use sequential. Save for later. 
