@@ -5,19 +5,17 @@ Created on Wed Jan  4 12:13:57 2023
 @author: mathe
 """
 
+# Import necessary libraries
 import tensorflow as tf
-
 import numpy as np
 import pandas as pd
 
+# Load data from files
 xyz_data = np.array(pd.read_csv('Ux.txt', delimiter = "\t"))[:,1:4]
-
-# Reading displacements and combining into one array
 ux = np.array(pd.read_csv('Ux.txt', delimiter = "\t"))[:,4]
 uy = np.array(pd.read_csv('Uy.txt', delimiter = "\t"))[:,4]
 uz = np.zeros((uy.shape[0],1))
 displacement = np.concatenate((ux[:,np.newaxis], uy[:,np.newaxis], uz), axis=1)
-
 sxx = np.array( pd.read_csv('Sxx.txt', delimiter = "\t"))[:,4]
 syy = np.array( pd.read_csv('Syy.txt', delimiter = "\t"))[:,4]
 sxy = np.array( pd.read_csv('Sxy.txt', delimiter = "\t"))[:,4]
@@ -25,12 +23,6 @@ col_data = np.array(pd.read_csv('Collocation Points.txt', delimiter = "\t"))[:,1
 
 bc_data = np.array(pd.read_csv('Ux.txt', delimiter = "\t"))
 bc_data = np.concatenate((bc_data, uy[:,np.newaxis]), axis=1)
-
-#filter BC based on if Y coord is 10 
-#bc_data_top = bc_data[bc_data[:,2] == 10]
-#bc_data_bottom = bc_data[bc_data[:,2] == 0]
-#bc_data = np.concatenate((bc_data_top, bc_data_bottom), axis=0)
-
 
 # Create a boolean index that is True for rows where the value in the 3rd column is 10 
 index = (bc_data[:, 2] == 10)
@@ -50,95 +42,51 @@ bc_present = np.zeros((bc_data.shape[0], 1))
 # Set the values in the new column to 1 for rows where the index is True
 bc_present[index] = 1
 
-# Concatenate the old array and the new column to create the new array
+## Concatenate the old array and the new column to create the new array
 boundary_conditions = np.concatenate((bc_present, boundary_conditions), axis=1)
 
-print(boundary_conditions.shape, xyz_data.shape, displacement.shape)
-
-#print(bc_present)
-
 # Define the inputs to the neural network
-points = tf.placeholder(tf.float32, shape=(None, num_points, 3))  # 3D coordinates of the points
-boundary_conditions = tf.placeholder(tf.float32, shape=(None, num_points, num_boundary_conditions))  # Boundary conditions at each point
+points = tf.compat.v1.placeholder(tf.float32, shape=(None, num_points, 3))  # 3D coordinates of the points
+boundary_conditions = tf.compat.v1.placeholder(tf.float32, shape=(None, num_points, num_boundary_conditions))  # Boundary conditions at each point
 
 # Concatenate the inputs
 inputs = tf.concat([points, boundary_conditions], axis=-1)
 
-# Define the convolutional and pooling layers
-num_filters = 64
-kernel_size = 1
-stride = 1
-padding = "VALID"
-pooling_size = num_points
+# Define the shared MLP and the convolutional layers for feature extraction
+model = tf.keras.Sequential()
+model.add(tf.keras.layers.Conv1D(64, kernel_size=1, activation='relu', input_shape=(num_points, 3+num_boundary_conditions)))
+model.add(tf.keras.layers.Conv1D(64, kernel_size=1, activation='relu'))
+model.add(tf.keras.layers.Conv1D(64, kernel_size=1, activation='relu'))
 
-layer = inputs
-for i in range(num_hidden_layers):
-    layer = tf.layers.conv1d(layer, num_filters, kernel_size, stride, padding)
-    layer = tf.layers.max_pooling1d(layer, pool_size=pooling_size, strides=pooling_size)
-global_feature = layer
+# Define the max pooling layer
+model.add(tf.keras.layers.GlobalMaxPool1D())
 
 # Define the fully connected layers
-num_neurons_per_layer = 32
-activation_function = tf.nn.relu
-
-layer = global_feature
-for i in range(num_hidden_layers):
-    layer = tf.layers.dense(layer, num_neurons_per_layer, activation=activation_function)
-output = tf.layers.dense(layer, 3)  # <-- The output is the displacement field
-
-# Define the outputs of the neural network
-displacement = output  # <-- The displacement field is the output of the neural network
+model.add(tf.keras.layers.Dense(512, activation='relu'))
+model.add(tf.keras.layers.Dense(256, activation='relu'))
+model.add(tf.keras.layers.Dense(3, activation='linear'))
 
 # Define the loss function
-displacement_loss = tf.losses.mean_squared_error(displacement, output)
-
-# Define the physics-informed loss term
-neo_hookean_loss_weight = 1e-3  # Weight for the neo-Hookean loss term
-stress = displacement * neo_hookean_loss_weight  # Stress at each point
-strain = (stress - displacement) / stress  # Strain at each point
-F = tf.exp(strain)  # Deformation gradient tensor
-J = tf.linalg.det(F)  # Determinant of the deformation gradient tensor
-I1 = tf.linalg.trace(F)  # First invariant of the deformation gradient tensor
-mu = 1.0  # Lame's constant
-neo_hookean_loss = mu / 2.0 * (I1 - 3) - mu * tf.log(J)  # Neo-Hookean loss
-loss = displacement_loss + neo_hookean_loss_weight * neo_hookean_loss
-
-# Combine the loss terms
-loss = displacement_loss + neo_hookean_loss_weight * ((J - 1)**2 + (I1 - 3)**2)
+def neo_hookean_loss(displacement, predicted_displacement):
+    # Define the neo-hookean energy density
+    I1 = tf.reduce_sum(tf.square(predicted_displacement), axis=-1)
+    J = tf.sqrt(tf.reduce_prod(I1))
+    W = (mu/2)*(I1 - 3) - mu*tf.log(J)
+    
+    # Define the loss as the mean squared error between the predicted displacement and the true displacement
+    loss = tf.reduce_mean(tf.square(predicted_displacement - displacement)) + tf.reduce_mean(W)
+    return loss
 
 # Define the optimizer
-learning_rate = 1e-3
-optimizer = tf.train.AdamOptimizer(learning_rate)
+optimizer = tf.train.AdamOptimizer()
 
 # Define the training operation
-training_op = optimizer.minimize(loss)
+train_op = optimizer.minimize(neo_hookean_loss)
 
-# Define the number of training steps and the batch size
-num_steps = 10000
-batch_size = 32
-
-# Create a session to train the neural network
+# Train the model
 with tf.Session() as sess:
-    # Initialize the variables
     sess.run(tf.global_variables_initializer())
-    
-    # Iterate over the training steps
     for step in range(num_steps):
-        # Select a batch of training data
-        points_batch, displacement_batch, boundary_conditions_batch = ...
-        
-        # Run the training operation
-        sess.run(training_op, feed_dict={points: points_batch,
-                                         displacement: displacement_batch,
-                                         boundary_conditions: boundary_conditions_batch})
-        
-        # Print the loss at each step
-        if step % 1000 == 0:
-            loss_value = sess.run(loss, feed_dict={points: points_batch,
-                                                   displacement: displacement_batch,
-                                                   boundary_conditions: boundary_conditions_batch})
-            print("Step:", step, "Loss:", loss_value)
-            
-    # Save the trained model
-    saver = tf.train.Saver()
-    saver.save(sess, "./point_net_model")
+        _, loss_value = sess.run([train_op, neo_hookean_loss], feed_dict={points: xyz_data, boundary_conditions: boundary_conditions, displacement: displacement})
+        if step % 100 == 0:
+            print("Step: {}, Loss: {}".format(step, loss_value))
