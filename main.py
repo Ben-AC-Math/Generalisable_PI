@@ -52,20 +52,20 @@ input_feature = np.concatenate((input_feature, boundary_conditions), axis=1)
 # Normalize the data
 scaler = MinMaxScaler()
 input_feature = scaler.fit_transform(input_feature)
-displacement = scale.fit_transform(displacement)
+displacement = scaler.fit_transform(displacement)
 
 # Train Test Split
 train_input_feature, test_input_feature, train_displacement, test_displacement = train_test_split(input_feature, displacement, test_size=0.2)
-train_input_feature, val_input_feature, train_displacement, val_displacement = train_test_split(train_input_feature, train_boundary_conditions, test_size=0.2)
+train_input_feature, val_input_feature, train_displacement, val_displacement = train_test_split(train_input_feature, train_displacement,test_size=0.2)
 
 # Finding number of input_feature and bcs for the network
 num_input_feature = train_input_feature.shape[0]
 
 # Define the inputs to the neural network
-input_feature = tf.compat.v1.placeholder(tf.float32, shape=(None, num_input_feature, 3))  # 3D coordinates of the input_feature
+train_input_feature = tf.compat.v1.placeholder(tf.float32, shape=(None, num_input_feature, 3))  # 3D coordinates of the input_feature
 
 # Concatenate the inputs
-inputs = tf.concat([input_feature], axis=-1)
+inputs = tf.concat([train_input_feature], axis=-1)
 
 # Define the shared MLP and the convolutional layers for feature extraction
 model = tf.keras.Sequential()
@@ -79,10 +79,10 @@ model.add(tf.keras.layers.GlobalMaxPool1D())
 # Define the fully connected layers
 model.add(tf.keras.layers.Dense(512, activation='relu'))
 model.add(tf.keras.layers.Dense(256, activation='relu'))
-model.add(tf.keras.layers.Dense(3, activation='linear'))
+model.add(tf.keras.layers.Dense(3, activation=None))
 
 # Define the displacement field
-displacement_predicted = model(inputs)
+displacement_predicted = model.output
 
 # Split the input_feature tensor into two tensors, one for the point coordinates and one for the boundary conditions
 train_points, train_boundary_conditions = tf.split(train_input_feature, [3, 2], axis=-1)
@@ -114,8 +114,20 @@ force = tf.compat.v1.gradients(S, train_points)[0]
 # Define the loss function
 loss = tf.reduce_mean(tf.square(force)) + tf.reduce_mean(tf.square(displacement_predicted - train_displacement))
 
-model.compile(loss = loss, optimizer = 'Adam', metrics = ['accuracy'])
+model.compile(loss = loss, optimizer = 'Adam', metrics = ['MeanSquaredError'])
 
-model.fit(train_input_feature, train_displacement, epochs=100, batch_size=32, validation_data = (val_input_feature, val_displacement))
+from tensorflow.keras.callbacks import TensorBoard
+
+# Define a log directory to store the TensorBoard logs
+log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+
+# Create a TensorBoard callback
+tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1)
+
+model.fit(train_input_feature, train_displacement, epochs=100, batch_size=32, validation_data = (val_input_feature, val_displacement), 
+callbacks=[tensorboard_callback])
+
+# Save the model
+model.save('my_model.h5')
 
 
