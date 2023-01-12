@@ -108,3 +108,5 @@ with tf.Session() as sess:
         _, loss_value = sess.run([train_op, neo_hookean_loss], feed_dict={points: xyz_data, boundary_conditions: boundary_conditions, displacement: displacement})
         if step % 100 == 0:
             print("Step: {}, Loss: {}".format(step, loss_value))
+
+#Complie model and train and use sequential. Save for later. 
