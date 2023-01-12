@@ -12,18 +12,16 @@ import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split
 
+#Defining material parameters
+mu = 0.5
+lmda = 1000
 
 # Load data from files
-xyz_data = np.array(pd.read_csv('Ux.txt', delimiter = "\t"))[:,1:4]
+points = np.array(pd.read_csv('Ux.txt', delimiter = "\t"))[:,1:4]
 ux = np.array(pd.read_csv('Ux.txt', delimiter = "\t"))[:,4]
 uy = np.array(pd.read_csv('Uy.txt', delimiter = "\t"))[:,4]
 uz = np.zeros((uy.shape[0],1))
 displacement = np.concatenate((ux[:,np.newaxis], uy[:,np.newaxis], uz), axis=1)
-#sxx = np.array( pd.read_csv('Sxx.txt', delimiter = "\t"))[:,4]
-#syy = np.array( pd.read_csv('Syy.txt', delimiter = "\t"))[:,4]
-#sxy = np.array( pd.read_csv('Sxy.txt', delimiter = "\t"))[:,4]
-#col_data = np.array(pd.read_csv('Collocation Points.txt', delimiter = "\t"))[:,1:3]
-
 bc_data = np.array(pd.read_csv('Ux.txt', delimiter = "\t"))
 bc_data = np.concatenate((bc_data, uy[:,np.newaxis]), axis=1)
 
@@ -48,14 +46,14 @@ bc_present[index] = 1
 ## Concatenate the old array and the new column to create the new array
 boundary_conditions = np.concatenate((bc_present, boundary_conditions), axis=1)
 
+# Normalize the data
+scaler = MinMaxScaler()
+points = scaler.fit_transform(points)
+boundary_conditions = scaler.fit_transform(boundary_conditions)
+
 # Train Test Split
 train_points, test_points, train_boundary_conditions, test_boundary_conditions = train_test_split(points, boundary_conditions, test_size=0.2)
 train_points, val_points, train_boundary_conditions, val_boundary_conditions = train_test_split(train_points, train_boundary_conditions, test_size=0.2)
-
-# Normalize the data
-scaler = MinMaxScaler()
-points = scaler.fit_transform(train_points)
-boundary_conditions = scaler.fit_transform(train_boundary_conditions)
 
 # Define the inputs to the neural network
 points = tf.compat.v1.placeholder(tf.float32, shape=(None, num_points, 3))  # 3D coordinates of the points
@@ -78,16 +76,24 @@ model.add(tf.keras.layers.Dense(512, activation='relu'))
 model.add(tf.keras.layers.Dense(256, activation='relu'))
 model.add(tf.keras.layers.Dense(3, activation='linear'))
 
+# Define the displacement field
+displacement = model(inputs)
+
+# Define the strain tensor
+strain = tf.compat.v1.gradients(displacement, train_points)[0]
+
+# Define the stress tensor
+mu = tf.compat.v1.placeholder(tf.float32, shape=())  # Lame's first parameter
+lmbda = tf.compat.v1.placeholder(tf.float32, shape=())  # Lame's second parameter
+
+# Define the trace of the strain tensor
+trace_strain = tf.reduce_sum(strain, axis=-1, keepdims=True)
+
+# Define the stress tensor
+stress = 2*mu*strain + lmbda*trace_strain*tf.eye(3)
+
 # Define the loss function
-def neo_hookean_loss(displacement, predicted_displacement):
-    # Define the neo-hookean energy density
-    I1 = tf.reduce_sum(tf.square(predicted_displacement), axis=-1)
-    J = tf.sqrt(tf.reduce_prod(I1))
-    W = (mu/2)*(I1 - 3) - mu*tf.log(J)
-    
-    # Define the loss as the mean squared error between the predicted displacement and the true displacement
-    loss = tf.reduce_mean(tf.square(predicted_displacement - displacement)) + tf.reduce_mean(W)
-    return loss
+loss = tf.reduce_mean(tf.square(stress))
 
 # Define the optimizer
 optimizer = tf.train.AdamOptimizer()
