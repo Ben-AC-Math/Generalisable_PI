@@ -9,14 +9,20 @@ Created on Wed Jan  4 12:13:57 2023
 import tensorflow as tf
 import numpy as np
 import pandas as pd
+from tensorflow.keras.layers import Input, Dense, Conv1D, MaxPooling1D, UpSampling1D, Flatten
+from tensorflow.keras.models import Model
+from tensorflow.keras.optimizers import Adam
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split
-from tensorflow.keras.callbacks import TensorBoard
+# Import the PointNet++ layers
+from tensorflow.keras.layers import Input, Dense, BatchNormalization, Dropout
+from tensorflow.keras.layers import Conv1D, MaxPooling1D, GlobalMaxPooling1D
+
 tf.compat.v1.disable_eager_execution()
 
 #Defining material parameters
-mu = 0.5
-lmda = 1000
+mu = 5
+lmda = 50
 
 # Load data from files
 input_feature = np.array(pd.read_csv('Ux.txt', delimiter = "\t"))[:,1:4]
@@ -67,29 +73,42 @@ train_input_feature = np.expand_dims(train_input_feature, axis=0)
 test_input_feature = np.expand_dims(test_input_feature, axis=0)
 val_input_feature = np.expand_dims(val_input_feature, axis=0)
 
-input_feature_input = tf.keras.layers.Input(shape=(train_input_feature.shape[1], train_input_feature.shape[2]))
+# Define the input layer
+input_feature = tf.keras.layers.Input(shape=(num_input_feature, 5))
 
-model = tf.keras.Sequential()
-model.add(tf.keras.layers.Conv1D(64, kernel_size=1, activation='relu', input_shape=(train_input_feature.shape[1], train_input_feature.shape[2])))
-model.add(tf.keras.layers.Conv1D(64, kernel_size=1, activation='relu'))
-model.add(tf.keras.layers.Conv1D(64, kernel_size=1, activation='relu'))
+# Define the encoder tf.keras.layers
+encoder1 = tf.keras.layers.Conv1D(64, 1, activation='relu', name='encoder1')(input_feature)
+encoder2 = tf.keras.layers.Conv1D(64, 1, activation='relu', name='encoder2')(encoder1)
+encoder3 = tf.keras.layers.Conv1D(64, 1, activation='relu', name='encoder3')(encoder2)
+encoder4 = tf.keras.layers.Conv1D(128, 1, activation='relu', name='encoder4')(encoder3)
+encoder5 = tf.keras.layers.Conv1D(1024, 1, activation='relu', name='encoder5')(encoder4)
 
-# Define the max pooling layer
-model.add(tf.keras.layers.GlobalMaxPool1D())
+# Define the global feature layer
+global_feature = tf.keras.layers.MaxPooling1D(pool_size=num_input_feature)(encoder5)
 
-# Define the fully connected layers
-model.add(tf.keras.layers.Dense(512, activation='relu'))
-model.add(tf.keras.layers.Dense(256, activation='relu'))
-model.add(tf.keras.layers.Dense(3, activation=None))
+# Define the decoder tf.keras.layers
+decoder1 = tf.keras.layers.Conv1D(512, 1, activation='relu', name='decoder1')(global_feature)
+decoder2 = tf.keras.layers.Conv1D(256, 1, activation='relu', name='decoder2')(decoder1)
+decoder3 = tf.keras.layers.Conv1D(128, 1, activation='relu', name='decoder3')(decoder2)
+decoder4 = tf.keras.layers.Conv1D(64, 1, activation='relu', name='decoder4')(decoder3)
+
+# Define the output layer
+output = tf.keras.layers.Conv1D(3, 1, activation='softmax', name='output')(decoder4)
+
+# Create the model
+model = tf.keras.Model(inputs=input_feature, outputs=output)
+
+# Define placeholders for the input and output of the model
+input_ph = tf.keras.layers.Input(shape=(train_input_feature.shape[1], train_input_feature.shape[2]))
+displacement_ph = tf.keras.layers.Input(shape=(train_displacement.shape[1]))
 
 # Define the displacement field & Apply the model to the inputs
-displacement_predicted = model.predict(train_input_feature)
+displacement_predicted = model(input_ph)
 
-def custom_loss(train_input_feature, displacement_predicted, train_displacement):
+def custom_loss(input_ph, displacement_predicted, displacement_ph):
     # Split the input_feature tensor into two tensors, one for the point coordinates and one for the boundary conditions
-    train_input_feature_reshaped = tf.reshape(train_input_feature, [-1, 5])
-    train_points = tf.slice(train_input_feature_reshaped, [0, 0], [-1, 3])
-
+    input_ph_reshaped = tf.reshape(input_ph, [-1, 5])
+    train_points = tf.slice(input_ph_reshaped, [0, 0], [-1, 3])
 
     # Compute the gradients with respect to the points tensor
     strain = tf.gradients(displacement_predicted, train_points)[0]
@@ -116,11 +135,11 @@ def custom_loss(train_input_feature, displacement_predicted, train_displacement)
     force = tf.gradients(S, train_points)[0]
 
     # Define the loss function
-    loss = tf.reduce_mean(tf.square(force)) + tf.reduce_mean(tf.square(displacement_predicted - train_displacement))
+    loss = tf.reduce_mean(tf.square(force)) + tf.reduce_mean(tf.square(displacement_predicted - displacement_ph))
 
     return loss
 
-loss = custom_loss(train_input_feature, displacement_predicted, train_displacement) 
+loss = custom_loss(input_ph, displacement_predicted, displacement_ph) 
 model.compile(loss = loss, optimizer = 'Adam', metrics = ['MeanSquaredError'])
 
 
@@ -130,7 +149,9 @@ log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 # Create a TensorBoard callback
 tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1)
 
-model.fit(train_input_feature, train_displacement, epochs=100, batch_size=32, validation_data = (val_input_feature, val_displacement), 
+feed_dict = {input_ph: train_input_feature, displacement_ph: train_displacement}
+
+model.fit(train_input_feature, train_displacement, epochs=100, batch_size=32, feed_dict = feed_dict, validation_data = (val_input_feature, val_displacement), 
 callbacks=[tensorboard_callback])
 
 # Save the model
