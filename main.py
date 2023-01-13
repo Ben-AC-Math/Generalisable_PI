@@ -12,6 +12,7 @@ import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split
 from tensorflow.keras.callbacks import TensorBoard
+export CUDA_VISIBLE_DEVICES=-1
 
 #Defining material parameters
 mu = 0.5
@@ -85,48 +86,48 @@ model.add(tf.keras.layers.Dense(3, activation=None))
 # Define the displacement field & Apply the model to the inputs
 displacement_predicted = model(inputs)
 
-# Split the input_feature tensor into two tensors, one for the point coordinates and one for the boundary conditions
-train_points, train_boundary_conditions = tf.split(train_input_feature, [3, 2], axis=-1)
+# # Split the input_feature tensor into two tensors, one for the point coordinates and one for the boundary conditions
+# train_points, train_boundary_conditions = tf.split(train_input_feature, [3, 2], axis=-1)
 
-# Compute the gradients with respect to the points tensor
-strain = tf.gradients(displacement_predicted, train_points)[0]
+# # Compute the gradients with respect to the points tensor
+# strain = tf.gradients(displacement_predicted, train_points)[0]
 
-# Define the material parameters
-mu = tf.keras.layers.Input(tf.float32, shape=()) # Lame's first parameter
-lmbda = tf.keras.layers.Input(tf.float32, shape=()) # Lame's second parameter
+# # Define the material parameters
+# mu = tf.keras.layers.Input(tf.float32, shape=()) # Lame's first parameter
+# lmbda = tf.keras.layers.Input(tf.float32, shape=()) # Lame's second parameter
 
-# Define the right Cauchy-Green deformation tensor
-C = tf.matmul(tf.transpose(strain, [0,2,1]), strain)
+# # Define the right Cauchy-Green deformation tensor
+# C = tf.matmul(tf.transpose(strain, [0,2,1]), strain)
 
-# Define the first invariant of C
-I1 = tf.trace(C)
+# # Define the first invariant of C
+# I1 = tf.trace(C)
 
-# Define the Jacobian
-J = tf.linalg.det(tf.eye(3) + strain)
+# # Define the Jacobian
+# J = tf.linalg.det(tf.eye(3) + strain)
 
-# Define the ground substance and volumetric forms of the second Piola-Kirchoff stress tensor
-S_gs = (mu/J)*(tf.eye(3) - (I1/3)*tf.linalg.inv(C))
-S_vol = (lmbda/J)*(tf.log(J))*tf.eye(3)
-S = S_gs + S_vol
+# # Define the ground substance and volumetric forms of the second Piola-Kirchoff stress tensor
+# S_gs = (mu/J)*(tf.eye(3) - (I1/3)*tf.linalg.inv(C))
+# S_vol = (lmbda/J)*(tf.log(J))*tf.eye(3)
+# S = S_gs + S_vol
 
-# Define the residual forces
-force = tf.compat.v1.gradients(S, train_points)[0]
+# # Define the residual forces
+# force = tf.compat.v1.gradients(S, train_points)[0]
 
-# Define the loss function
-loss = tf.reduce_mean(tf.square(force)) + tf.reduce_mean(tf.square(displacement_predicted - train_displacement))
+# # Define the loss function
+# loss = tf.reduce_mean(tf.square(force)) + tf.reduce_mean(tf.square(displacement_predicted - train_displacement))
 
-model.compile(loss = loss, optimizer = 'Adam', metrics = ['MeanSquaredError'])
+# model.compile(loss = loss, optimizer = 'Adam', metrics = ['MeanSquaredError'])
 
-# Define a log directory to store the TensorBoard logs
-log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+# # Define a log directory to store the TensorBoard logs
+# log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
-# Create a TensorBoard callback
-tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1)
+# # Create a TensorBoard callback
+# tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1)
 
-model.fit(train_input_feature, train_displacement, epochs=100, batch_size=32, validation_data = (val_input_feature, val_displacement), 
-callbacks=[tensorboard_callback])
+# model.fit(train_input_feature, train_displacement, epochs=100, batch_size=32, validation_data = (val_input_feature, val_displacement), 
+# callbacks=[tensorboard_callback])
 
-# Save the model
-model.save('my_model.h5')
+# # Save the model
+# model.save('my_model.h5')
 
 
