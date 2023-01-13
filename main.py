@@ -63,11 +63,14 @@ train_input_feature, val_input_feature, train_displacement, val_displacement = t
 # Finding number of input_feature and bcs for the network
 num_input_feature = train_input_feature.shape[0]
 
-input_feature_input = tf.keras.layers.Input(shape=(train_input_feature.shape[0], train_input_feature.shape[1]))
+train_input_feature = np.expand_dims(train_input_feature, axis=0)
+test_input_feature = np.expand_dims(test_input_feature, axis=0)
+val_input_feature = np.expand_dims(val_input_feature, axis=0)
 
-# Define the shared MLP and the convolutional layers for feature extraction
+input_feature_input = tf.keras.layers.Input(shape=(train_input_feature.shape[1], train_input_feature.shape[2]))
+
 model = tf.keras.Sequential()
-model.add(tf.keras.layers.Conv1D(64, kernel_size=1, activation='relu', input_shape=(None,train_input_feature.shape[0], train_input_feature.shape[1])))
+model.add(tf.keras.layers.Conv1D(64, kernel_size=1, activation='relu', input_shape=(train_input_feature.shape[1], train_input_feature.shape[2])))
 model.add(tf.keras.layers.Conv1D(64, kernel_size=1, activation='relu'))
 model.add(tf.keras.layers.Conv1D(64, kernel_size=1, activation='relu'))
 
@@ -80,18 +83,20 @@ model.add(tf.keras.layers.Dense(256, activation='relu'))
 model.add(tf.keras.layers.Dense(3, activation=None))
 
 # Define the displacement field & Apply the model to the inputs
-displacement_predicted = model(train_input_feature)
+displacement_predicted = model.predict(train_input_feature)
 
 def custom_loss(train_input_feature, displacement_predicted, train_displacement):
     # Split the input_feature tensor into two tensors, one for the point coordinates and one for the boundary conditions
-    train_points, train_boundary_conditions = tf.split(train_input_feature, [3, 2], axis=-1)
+    train_input_feature_reshaped = tf.reshape(train_input_feature, [-1, 5])
+    train_points = tf.slice(train_input_feature_reshaped, [0, 0], [-1, 3])
+
 
     # Compute the gradients with respect to the points tensor
     strain = tf.gradients(displacement_predicted, train_points)[0]
 
     # Define the material parameters
-    mu = tf.keras.layers.Input(dtype=tf.float32, shape=()) # Lame's first parameter
-    lmbda = tf.keras.layers.Input(dtype=tf.float32, shape=()) # Lame's second parameter
+    mu = 5 # Lame's first parameter
+    lmbda = 50 # Lame's second parameter
 
     # Define the right Cauchy-Green deformation tensor
     C = tf.matmul(tf.transpose(strain, [0,2,1]), strain)
@@ -108,14 +113,16 @@ def custom_loss(train_input_feature, displacement_predicted, train_displacement)
     S = S_gs + S_vol
 
     # Define the residual forces
-    force = tf.compat.v1.gradients(S, train_points)[0]
+    force = tf.gradients(S, train_points)[0]
 
     # Define the loss function
     loss = tf.reduce_mean(tf.square(force)) + tf.reduce_mean(tf.square(displacement_predicted - train_displacement))
 
     return loss
 
-model.compile(loss = custom_loss, optimizer = 'Adam', metrics = ['MeanSquaredError'])
+loss = custom_loss(train_input_feature, displacement_predicted, train_displacement) 
+model.compile(loss = loss, optimizer = 'Adam', metrics = ['MeanSquaredError'])
+
 
 # Define a log directory to store the TensorBoard logs
 log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
