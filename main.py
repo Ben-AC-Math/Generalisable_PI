@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split
+from tensorflow.keras.callbacks import TensorBoard
 
 #Defining material parameters
 mu = 0.5
@@ -62,14 +63,14 @@ train_input_feature, val_input_feature, train_displacement, val_displacement = t
 num_input_feature = train_input_feature.shape[0]
 
 # Define the inputs to the neural network
-train_input_feature = tf.compat.v1.placeholder(tf.float32, shape=(None, num_input_feature, 3))  # 3D coordinates of the input_feature
+train_input_feature = tf.keras.layers.Input(shape=(None,3)) # 3D coordinates of the input_feature
 
 # Concatenate the inputs
 inputs = tf.concat([train_input_feature], axis=-1)
 
 # Define the shared MLP and the convolutional layers for feature extraction
 model = tf.keras.Sequential()
-model.add(tf.keras.layers.Conv1D(64, kernel_size=1, activation='relu', input_shape=(num_input_feature)))
+model.add(tf.keras.layers.Conv1D(64, kernel_size=1, activation='relu', input_shape=(None,3)))
 model.add(tf.keras.layers.Conv1D(64, kernel_size=1, activation='relu'))
 model.add(tf.keras.layers.Conv1D(64, kernel_size=1, activation='relu'))
 
@@ -81,8 +82,8 @@ model.add(tf.keras.layers.Dense(512, activation='relu'))
 model.add(tf.keras.layers.Dense(256, activation='relu'))
 model.add(tf.keras.layers.Dense(3, activation=None))
 
-# Define the displacement field
-displacement_predicted = model.output
+# Define the displacement field & Apply the model to the inputs
+displacement_predicted = model(inputs)
 
 # Split the input_feature tensor into two tensors, one for the point coordinates and one for the boundary conditions
 train_points, train_boundary_conditions = tf.split(train_input_feature, [3, 2], axis=-1)
@@ -91,8 +92,8 @@ train_points, train_boundary_conditions = tf.split(train_input_feature, [3, 2], 
 strain = tf.gradients(displacement_predicted, train_points)[0]
 
 # Define the material parameters
-mu = tf.compat.v1.placeholder(tf.float32, shape=()) # Lame's first parameter
-lmbda = tf.compat.v1.placeholder(tf.float32, shape=()) # Lame's second parameter
+mu = tf.keras.layers.Input(tf.float32, shape=()) # Lame's first parameter
+lmbda = tf.keras.layers.Input(tf.float32, shape=()) # Lame's second parameter
 
 # Define the right Cauchy-Green deformation tensor
 C = tf.matmul(tf.transpose(strain, [0,2,1]), strain)
@@ -115,8 +116,6 @@ force = tf.compat.v1.gradients(S, train_points)[0]
 loss = tf.reduce_mean(tf.square(force)) + tf.reduce_mean(tf.square(displacement_predicted - train_displacement))
 
 model.compile(loss = loss, optimizer = 'Adam', metrics = ['MeanSquaredError'])
-
-from tensorflow.keras.callbacks import TensorBoard
 
 # Define a log directory to store the TensorBoard logs
 log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
