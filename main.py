@@ -93,7 +93,7 @@ output = tf.keras.layers.Dense(3, activation='linear', name='output')(global_fea
 input_ph = tf.keras.layers.Input(shape=(train_input_feature.shape[1], train_input_feature.shape[2]))
 displacement_ph = tf.keras.layers.Input(shape=(train_displacement.shape[1]))
 
-model = tf.keras.Model(inputs=input_ph, outputs=displacement_predicted)
+model = tf.keras.Model(inputs=input_ph, outputs=displacement_ph)
 
 def custom_loss(train_input_feature, input_ph, train_displacement, mu, lmbda):
     # Split the input_feature tensor into two tensors, one for the point coordinates and one for the boundary conditions
