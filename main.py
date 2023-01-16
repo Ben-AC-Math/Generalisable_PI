@@ -76,24 +76,56 @@ val_input_feature = np.expand_dims(val_input_feature, axis=0)
 # Define the input layer
 input_feature = tf.keras.layers.Input(shape=(num_input_feature, 5))
 
-# Define the encoder layers
-encoder1 = tf.keras.layers.Conv1D(64, 1, activation='relu', name='encoder1')(input_feature)
-encoder2 = tf.keras.layers.Conv1D(64, 1, activation='relu', name='encoder2')(encoder1)
-encoder3 = tf.keras.layers.Conv1D(64, 1, activation='relu', name='encoder3')(encoder2)
-encoder4 = tf.keras.layers.Conv1D(128, 1, activation='relu', name='encoder4')(encoder3)
-encoder5 = tf.keras.layers.Conv1D(1024, 1, activation='relu', name='encoder5')(encoder4)
+# Define the shared MLP layers for the input transform network
+input_transform_mlp1 = tf.keras.layers.Dense(5, activation='relu', name='input_transform_mlp1')(input_feature)
+input_transform_mlp2 = tf.keras.layers.Dense(5, activation='relu', name='input_transform_mlp2')(input_transform_mlp1)
 
-# Define the global feature layer
-global_feature = tf.keras.layers.GlobalMaxPooling1D()(encoder5)
+# Learn a transformation matrix from the input transform network output
+input_transformation = tf.keras.layers.Dense(5*5, activation='relu', name='input_transformation')(input_transform_mlp2)
+input_transformation = tf.keras.layers.Reshape((5, 5))(input_transformation)
+
+# Apply the input transformation matrix to the input point cloud
+transformed_input = tf.keras.layers.Lambda(lambda x: tf.matmul(x[0], x[1]))([input_feature, input_transformation])
+
+# Define shared MLP layers for feature extraction
+mlp1 = tf.keras.layers.Dense(64, activation='relu', name='mlp1')(transformed_input)
+mlp2 = tf.keras.layers.Dense(64, activation='relu', name='mlp2')(mlp1)
+
+# Define the shared MLP layers for the feature transform network
+feature_transform_mlp1 = tf.keras.layers.Dense(64, activation='relu', name='feature_transform_mlp1')(mlp2)
+feature_transform_mlp2 = tf.keras.layers.Dense(64, activation='relu', name='feature_transform_mlp2')(feature_transform_mlp1)
+
+# Learn a transformation matrix from the feature transform network output
+feature_transformation = tf.keras.layers.Dense(64*64, activation='relu', name='feature_transformation')(feature_transform_mlp2)
+feature_transformation = tf.keras.layers.Reshape((64, 64))(feature_transformation)
+
+# Apply the feature transformation matrix to the extracted features
+transformed_features = tf.keras.layers.Lambda(lambda x: tf.matmul(x[0], x[1]))([mlp2, feature_transformation])
+
+# Define additional MLP layers for feature extraction
+mlp3 = tf.keras.layers.Dense(64, activation='relu', name='mlp3')(transformed_features)
+mlp4 = tf.keras.layers.Dense(128, activation='relu', name='mlp3')(mlp3)
+mlp5 = tf.keras.layers.Dense(1024, activation='relu', name='mlp4')(mlp4)
+
+# Define the max pooling layer
+global_feature = tf.keras.layers.GlobalMaxPooling1D()(mlp5)
+
+# Define the fully connected layers
+fc1 = tf.keras.layers.Dense(1024, activation='relu', name='fc1')(global_feature)
+fc2 = tf.keras.layers.Dense(512, activation='relu', name='fc2')(fc1)
+fc3 = tf.keras.layers.Dense(256, activation='relu', name='fc2')(fc2)
+fc4 = tf.keras.layers.Dense(128, activation='relu', name='fc2')(fc3)
+fc5 = tf.keras.layers.Dense(128, activation='relu', name='fc2')(fc4)
 
 # Define the output layer
-output = tf.keras.layers.Dense(3, activation='linear', name='output')(global_feature)
+output = tf.keras.layers.Dense(3, activation='linear', name='output')(fc5)
 
 # Define placeholders for the input and output of the model
 input_ph = tf.keras.layers.Input(shape=(train_input_feature.shape[1], train_input_feature.shape[2]))
-displacement_ph = tf.keras.layers.Input(shape=(train_displacement.shape[1]))
+output_ph = tf.keras.layers.Input(shape=(train_output.shape[1]))
 
-model = tf.keras.Model(inputs=input_ph, outputs=displacement_ph)
+model = tf.keras.Model(inputs=input_ph, outputs=output_ph)
+
 
 def custom_loss(train_input_feature, input_ph, train_displacement, mu, lmbda):
     # Split the input_feature tensor into two tensors, one for the point coordinates and one for the boundary conditions
