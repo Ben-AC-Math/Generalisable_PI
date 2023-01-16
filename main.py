@@ -17,6 +17,7 @@ from sklearn.model_selection import train_test_split
 # Import the PointNet++ layers
 from tensorflow.keras.layers import Input, Dense, BatchNormalization, Dropout
 from tensorflow.keras.layers import Conv1D, MaxPooling1D, GlobalMaxPooling1D
+from tensorflow.keras import initializers
 
 tf.compat.v1.disable_eager_execution()
 
@@ -57,6 +58,8 @@ boundary_conditions = np.concatenate((bc_present, boundary_conditions), axis=1)
 # Creating the input feature vector
 input_feature = np.concatenate((input_feature, boundary_conditions), axis=1)
 
+batch_size=32
+
 # Normalize the data
 scaler = MinMaxScaler()
 input_feature = scaler.fit_transform(input_feature)
@@ -69,75 +72,77 @@ train_input_feature, val_input_feature, train_displacement, val_displacement = t
 # Finding number of input_feature and bcs for the network
 num_input_feature = train_input_feature.shape[0]
 
-train_input_feature = np.expand_dims(train_input_feature, axis=0)
-test_input_feature = np.expand_dims(test_input_feature, axis=0)
-val_input_feature = np.expand_dims(val_input_feature, axis=0)
+#Define Initialiser 
+initializer = tf.keras.initializers.RandomNormal(mean=0., stddev=1.)
 
 # Define the input layer
 input_feature = tf.keras.layers.Input(shape=(num_input_feature, 5))
 
 # Define the shared MLP layers for the input transform network
-input_transform_mlp1 = tf.keras.layers.Dense(5, activation='relu', name='input_transform_mlp1')(input_feature)
-input_transform_mlp2 = tf.keras.layers.Dense(5, activation='relu', name='input_transform_mlp2')(input_transform_mlp1)
+input_transform_mlp1 = tf.keras.layers.Dense(64, kernel_initializer=initializer, activation='relu', name='input_transform_mlp1')(input_feature)
+input_transform_mlp2 = tf.keras.layers.Dense(128, kernel_initializer=initializer, activation='relu', name='input_transform_mlp2')(input_transform_mlp1)
+input_transform_mlp3 = tf.keras.layers.Dense(128, kernel_initializer=initializer, activation='relu', name='input_transform_mlp3')(input_transform_mlp2)
+# Define the max pooling layer
+#input_transform_pool = tf.keras.layers.GlobalMaxPooling1D()(input_transform_mlp3)
 
-# Learn a transformation matrix from the input transform network output
-input_transformation = tf.keras.layers.Dense(5*5, activation='relu', name='input_transformation')(input_transform_mlp2)
-input_transformation = tf.keras.layers.Reshape((5, 5))(input_transformation)
 
-# Apply the input transformation matrix to the input point cloud
-transformed_input = tf.keras.layers.Lambda(lambda x: tf.matmul(x[0], x[1]))([input_feature, input_transformation])
+# # Learn a transformation matrix from the input transform network output
+# input_transformation = tf.keras.layers.Dense(5*5, activation='relu', name='input_transformation')(input_transform_mlp2)
+# input_transformation = tf.keras.layers.Reshape((6268, 5, 5))(input_transformation)
+
+# # Apply the input transformation matrix to the input point cloud
+# transformed_input = tf.keras.layers.Lambda(lambda x: tf.matmul(x[0], x[1]))([input_feature, input_transformation])
+transformed_input = input_transform_mlp3
 
 # Define shared MLP layers for feature extraction
-mlp1 = tf.keras.layers.Dense(64, activation='relu', name='mlp1')(transformed_input)
-mlp2 = tf.keras.layers.Dense(64, activation='relu', name='mlp2')(mlp1)
+mlp1 = tf.keras.layers.Dense(64, kernel_initializer=initializer, activation='relu', name='mlp1')(transformed_input)
+mlp2 = tf.keras.layers.Dense(64, kernel_initializer=initializer, activation='relu', name='mlp2')(mlp1)
 
 # Define the shared MLP layers for the feature transform network
-feature_transform_mlp1 = tf.keras.layers.Dense(64, activation='relu', name='feature_transform_mlp1')(mlp2)
-feature_transform_mlp2 = tf.keras.layers.Dense(64, activation='relu', name='feature_transform_mlp2')(feature_transform_mlp1)
+feature_transform_mlp1 = tf.keras.layers.Dense(64, kernel_initializer=initializer, activation='relu', name='feature_transform_mlp1')(mlp2)
+feature_transform_mlp2 = tf.keras.layers.Dense(64, kernel_initializer=initializer, activation='relu', name='feature_transform_mlp2')(feature_transform_mlp1)
 
 # Learn a transformation matrix from the feature transform network output
-feature_transformation = tf.keras.layers.Dense(64*64, activation='relu', name='feature_transformation')(feature_transform_mlp2)
-feature_transformation = tf.keras.layers.Reshape((64, 64))(feature_transformation)
+# feature_transformation = tf.keras.layers.Dense(64*64, activation='relu', name='feature_transformation')(feature_transform_mlp2)
+# feature_transformation = tf.keras.layers.Reshape((64, 64))(feature_transformation)
 
 # Apply the feature transformation matrix to the extracted features
-transformed_features = tf.keras.layers.Lambda(lambda x: tf.matmul(x[0], x[1]))([mlp2, feature_transformation])
+# transformed_features = tf.keras.layers.Lambda(lambda x: tf.matmul(x[0], x[1]))([mlp2, feature_transformation])
+transformed_features = feature_transform_mlp2
 
 # Define additional MLP layers for feature extraction
-mlp3 = tf.keras.layers.Dense(64, activation='relu', name='mlp3')(transformed_features)
-mlp4 = tf.keras.layers.Dense(128, activation='relu', name='mlp3')(mlp3)
-mlp5 = tf.keras.layers.Dense(1024, activation='relu', name='mlp4')(mlp4)
+mlp3 = tf.keras.layers.Dense(64, kernel_initializer=initializer, activation='relu', name='mlp3')(transformed_features)
+mlp4 = tf.keras.layers.Dense(128, kernel_initializer=initializer, activation='relu', name='mlp4')(mlp3)
+mlp5 = tf.keras.layers.Dense(1024, kernel_initializer=initializer, activation='relu', name='mlp5')(mlp4)
 
 # Define the max pooling layer
-global_feature = tf.keras.layers.GlobalMaxPooling1D()(mlp5)
+#global_feature = tf.keras.layers.GlobalMaxPooling1D()(mlp5)
 
 # Define the fully connected layers
-fc1 = tf.keras.layers.Dense(1024, activation='relu', name='fc1')(global_feature)
-fc2 = tf.keras.layers.Dense(512, activation='relu', name='fc2')(fc1)
-fc3 = tf.keras.layers.Dense(256, activation='relu', name='fc2')(fc2)
-fc4 = tf.keras.layers.Dense(128, activation='relu', name='fc2')(fc3)
-fc5 = tf.keras.layers.Dense(128, activation='relu', name='fc2')(fc4)
+fc1 = tf.keras.layers.Dense(1024, kernel_initializer=initializer, activation='relu', name='fc1')(mlp5)
+fc2 = tf.keras.layers.Dense(512, kernel_initializer=initializer, activation='relu', name='fc2')(fc1)
+fc3 = tf.keras.layers.Dense(256, kernel_initializer=initializer, activation='relu', name='fc3')(fc2)
+fc4 = tf.keras.layers.Dense(128, kernel_initializer=initializer, activation='relu', name='fc4')(fc3)
+fc5 = tf.keras.layers.Dense(128, kernel_initializer=initializer, activation='relu', name='fc5')(fc4)
 
 # Define the output layer
-output = tf.keras.layers.Dense(3, activation='linear', name='output')(fc5)
+output = tf.keras.layers.Dense(3, kernel_initializer=initializer, activation='linear', name='output')(fc5)
 
-# Define placeholders for the input and output of the model
-input_ph = tf.keras.layers.Input(shape=(train_input_feature.shape[1], train_input_feature.shape[2]))
-output_ph = tf.keras.layers.Input(shape=(train_output.shape[1]))
-
-model = tf.keras.Model(inputs=input_ph, outputs=output_ph)
+model = tf.keras.Model(inputs=input_feature, outputs=output)
 
 
-def custom_loss(train_input_feature, input_ph, train_displacement, mu, lmbda):
+def custom_loss(train_input_feature, input_feature, train_displacement, mu, lmbda):
     # Split the input_feature tensor into two tensors, one for the point coordinates and one for the boundary conditions
     input_ph_reshaped = tf.reshape(train_input_feature , [-1, 5])
     train_points = tf.slice(input_ph_reshaped, [0, 0], [-1, 3])
 
     # Define the displacement field & Apply the model to the inputs
-    displacement_predicted = model(input_ph)
+    displacement_predicted = model(train_input_feature)
 
     # Compute the strain tensor
     strain = tf.gradients(displacement_predicted, train_points)[0]
 
+    print(strain)
     # Define the right Cauchy-Green deformation tensor
     C = tf.matmul(tf.transpose(strain, [0,2,1]), strain)
 
@@ -160,7 +165,7 @@ def custom_loss(train_input_feature, input_ph, train_displacement, mu, lmbda):
 
     return loss
 
-loss = custom_loss(train_input_feature , input_ph, train_displacement, mu, lmbda) 
+loss = custom_loss(train_input_feature , input_feature, train_displacement, mu, lmbda) 
 model.compile(loss = loss, optimizer = 'Adam', metrics = ['MeanSquaredError'])
 
 # Define a log directory to store the TensorBoard logs
@@ -169,9 +174,8 @@ log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 # Create a TensorBoard callback
 tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1)
 
-model.fit(input_ph, displacement_ph, epochs=100, batch_size=32, validation_data = (val_input_feature, val_displacement), 
+model.fit(train_input_feature, train_displacement, epochs=100, batch_size=batch_size, validation_data = (val_input_feature, val_displacement), 
 callbacks=[tensorboard_callback])
-
 
 # Save the model
 model.save('my_model.h5')
