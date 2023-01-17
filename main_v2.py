@@ -28,7 +28,7 @@ bc_data = np.array(pd.read_csv('Ux.txt', delimiter = "\t"))
 bc_data = np.concatenate((bc_data, uy[:,np.newaxis]), axis=1)
 
 # Create a boolean index that is True for rows where the value in the 3rd column is 10 
-index = (bc_data[:, 2] == 10)
+index = (bc_data[:, 2] == 5)
 
 #BCs is a 3 column array (x,y,z) vectors of displacement BCs or could just be a one column?
 boundary_conditions = np.zeros((bc_data.shape[0],1))
@@ -82,12 +82,12 @@ input_transform_mlp4 = tf.keras.layers.Dense(512, kernel_initializer=initializer
 input_transform_mlp5 = tf.keras.layers.Dense(256, kernel_initializer=initializer, activation='relu', name='input_transform_mlp5')(input_transform_mlp4)
 
 # Learn a transformation matrix from the input transform network output
-# input_transformation = tf.keras.layers.Dense(5*5, activation='relu', name='input_transformation')(input_transform_mlp2)
-# input_transformation = tf.keras.layers.Reshape((6268, 5, 5))(input_transformation)
+input_transformation = tf.keras.layers.Dense(5*5, activation='relu', name='input_transformation')(input_transform_mlp2)
+input_transformation = tf.keras.layers.Reshape((6268, 5, 5))(input_transformation)
 
 # Apply the input transformation matrix to the input point cloud
-# transformed_input = tf.keras.layers.Lambda(lambda x: tf.matmul(x[0], x[1]))([input_feature, input_transformation])
-transformed_input = input_transform_mlp3
+transformed_input = tf.keras.layers.Lambda(lambda x: tf.matmul(x[0], x[1]))([input_feature, input_transformation])
+#transformed_input = input_transform_mlp3
 
 # Define shared MLP layers for feature extraction
 mlp1 = tf.keras.layers.Dense(64, kernel_initializer=initializer, activation='relu', name='mlp1')(transformed_input)
@@ -104,12 +104,12 @@ feature_transform_mlp4 = tf.keras.layers.Dense(512, kernel_initializer=initializ
 feature_transform_mlp5 = tf.keras.layers.Dense(256, kernel_initializer=initializer, activation='relu', name='feature_transform_mlp5')(feature_transform_mlp4)
 
 # Learn a transformation matrix from the feature transform network output
-# feature_transformation = tf.keras.layers.Dense(64*64, activation='relu', name='feature_transformation')(feature_transform_mlp2)
-# feature_transformation = tf.keras.layers.Reshape((64, 64))(feature_transformation)
+feature_transformation = tf.keras.layers.Dense(64*64, activation='relu', name='feature_transformation')(feature_transform_mlp2)
+feature_transformation = tf.keras.layers.Reshape((64, 64))(feature_transformation)
 
 # Apply the feature transformation matrix to the extracted features
-# transformed_features = tf.keras.layers.Lambda(lambda x: tf.matmul(x[0], x[1]))([mlp2, feature_transformation])
-transformed_features = feature_transform_mlp2
+transformed_features = tf.keras.layers.Lambda(lambda x: tf.matmul(x[0], x[1]))([mlp2, feature_transformation])
+#transformed_features = feature_transform_mlp2
 
 # Define additional MLP layers for feature extraction
 mlp3 = tf.keras.layers.Dense(64, kernel_initializer=initializer, activation='relu', name='mlp3')(transformed_features)
@@ -117,10 +117,10 @@ mlp4 = tf.keras.layers.Dense(128, kernel_initializer=initializer, activation='re
 mlp5 = tf.keras.layers.Dense(1024, kernel_initializer=initializer, activation='relu', name='mlp5')(mlp4)
 
 # Define the max pooling layer
-#global_feature = tf.keras.layers.GlobalMaxPooling1D()(mlp5)
-global_feature = mlp5 
-#concat = tf.keras.layers.Concatenate(axis=1)([transformed_features, global_feature])
-concat = global_feature
+global_feature = tf.keras.layers.GlobalMaxPooling1D()(mlp5)
+#global_feature = mlp5 
+concat = tf.keras.layers.Concatenate(axis=1)([transformed_features, global_feature])
+#concat = global_feature
 
 # Define the fully connected layers
 fc1 = tf.keras.layers.Dense(512, kernel_initializer=initializer, activation='relu', name='fc1')(concat)
@@ -141,7 +141,8 @@ train_dataset = tf.data.Dataset.from_tensor_slices((train_input_feature, train_d
 # define the custom training loop
 epochs = 10
 for epoch in range(epochs):
-    for step, (train_input_feature, train_displacement) in enumerate(train_dataset):
+    #for step, (train_input_feature, train_displacement) in enumerate(train_dataset):
+    for train_input_feature, train_displacement in zip(train_input_feature, train_displacement):
 
         with tf.GradientTape(persistent=True) as tape:
             train_displacement_pred = model(train_input_feature, training=True)
