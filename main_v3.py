@@ -104,6 +104,11 @@ class PointNet(nn.Module):
         self.global_feature = nn.AdaptiveMaxPool1d(1)
         
         #add output of T2 to output of global feature 
+
+        self.output1 = self.mlp3(input)
+        self.output2 = self.global_feature(input)
+
+        self.combined_output = torch.cat((self.output1, self.output2), dim=1)
         self.fc1 = nn.Linear(1088, 512, bias=True, activation=nn.ReLU)
         self.fc2 = nn.Linear(512, 256, bias=True, activation=nn.ReLU)
         self.fc3 = nn.Linear(256, 128, bias=True, activation=nn.ReLU)
