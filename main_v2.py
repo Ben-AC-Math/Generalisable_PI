@@ -58,9 +58,14 @@ scaler = MinMaxScaler()
 input_feature = scaler.fit_transform(input_feature)
 displacement = scaler.fit_transform(displacement)
 
+
 # Train Test Split
 train_input_feature, test_input_feature, train_displacement, test_displacement = train_test_split(input_feature, displacement, test_size=0.2)
 train_input_feature, val_input_feature, train_displacement, val_displacement = train_test_split(train_input_feature, train_displacement,test_size=0.2)
+
+train_data = np.concatenate((train_input_feature, train_displacement ))
+test_data = np.concatenate((test_input_feature, test_displacement ))
+val_data = np.concatenate((val_input_feature, val_displacement ))
 
 # Finding number of input_feature and bcs for the network
 num_input_feature = train_input_feature.shape[0]
