@@ -1,5 +1,7 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+
 # Import necessary libraries
 import tensorflow as tf
 import numpy as np
@@ -67,13 +69,59 @@ train_input_feature, val_input_feature, train_displacement, val_displacement = t
 # Finding number of input_feature and bcs for the network
 num_input_feature = train_input_feature.shape[0]
 
+
+
+
+class TNet(nn.Module):
+    def __init__(self, num_input_feature):
+        super(TNet, self).__init__()
+
+        self.m = num_input_feature
+
+        self.input_transform_mlp1 = nn.Linear(self.m, 64, bias=True)
+        self.input_transform_mlp2 = nn.Linear(64, 128, bias=True)
+        self.input_transform_mlp3 = nn.Linear(128, 1024, bias=True)
+        self.input_transform_pool = nn.AdaptiveMaxPool1d(1)
+        self.input_transform_mlp4 = nn.Linear(1024, 512, bias=True)
+        self.input_transform_mlp5 = nn.Linear(512, 256, bias=True)
+
+        self.input_transformation = nn.Linear(256, self.m*self.m, bias=True)
+
+        self.bn1 = nn.BatchNorm1d(64)
+        self.bn2 = nn.BatchNorm1d(128)
+        self.bn3 = nn.BatchNorm1d(1024)
+        self.bn4 = nn.BatchNorm1d(512)
+        self.bn5 = nn.BatchNorm1d(256)
+        #self.transformed_input = torch.matmul()
+
+    def forward(self, x):
+        
+
+        batch_size = x.size(0)
+        x = F.relu(self.bn1(self.input_transform_mlp1(x)))
+        x = F.relu(self.bn2(self.input_transform_mlp2(x)))
+        x = F.relu(self.bn3(self.input_transform_mlp3(x)))
+        pool = nn.MaxPool1d(x.size(-1))(x)
+        flat = nn.Flatten(1)(pool)
+        x = F.relu(self.bn4(self.input_transform_mlp4(x)))
+        x = F.relu(self.bn5(self.input_transform_mlp5(x)))
+
+        #initialize as identity
+        init = torch.eye(self.m, requires_grad=True).repeat(batch_size,1,1)
+        if x.is_cuda:
+            init=init.cuda()
+        matrix = self.input_transformation(x).view(-1,self.m,self.m) + init
+        
+        return matrix
+
+
+
 class PointNet(nn.Module):
     def __init__(self, num_input_feature, initializer):
         super(PointNet, self).__init__()
         
         self.num_input_feature = num_input_feature
-        self.initializer = initializer
-        
+                
         self.input_transform_mlp1 = nn.Linear(5, 64, bias=True, activation=nn.ReLU)
         self.input_transform_mlp2 = nn.Linear(64, 128, bias=True, activation=nn.ReLU)
         self.input_transform_mlp3 = nn.Linear(128, 1024, bias=True, activation=nn.ReLU)
